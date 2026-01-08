@@ -6,17 +6,20 @@ import (
 	"net/http"
 
 	"github.com/fncg/ReviewerService/internal/github"
+	"github.com/fncg/ReviewerService/internal/storage"
 )
 
 type Server struct {
 	mux *http.ServeMux
+	db  *storage.Postgres
 }
 
-func NewServer() *Server {
+func NewServer(db *storage.Postgres) *Server {
 	mux := http.NewServeMux()
 
 	s := &Server{
 		mux: mux,
+		db:  db,
 	}
 
 	mux.HandleFunc("/health", s.health)
