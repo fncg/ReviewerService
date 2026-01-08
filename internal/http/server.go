@@ -60,6 +60,8 @@ func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.db.HandlePR(event)
+
 	log.Printf(
 		"New PR opened: repo=%s title=%s author=%s",
 		event.Repository.FullName,
