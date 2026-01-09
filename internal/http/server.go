@@ -13,10 +13,10 @@ import (
 type Server struct {
 	mux *http.ServeMux
 	db  *storage.Postgres
-	bot *telegram.Bot
+	bot telegram.Notifier
 }
 
-func NewServer(db *storage.Postgres, bot *telegram.Bot) *Server {
+func NewServer(db *storage.Postgres, bot telegram.Notifier) *Server {
 	mux := http.NewServeMux()
 
 	s := &Server{
