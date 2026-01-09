@@ -1,17 +1,31 @@
-version: "3.9"
-
 services:
-  db:
+  postgres:
     image: postgres:15
-    container_name: reviewer_postgres
     environment:
       POSTGRES_DB: reviewer
       POSTGRES_USER: reviewer
       POSTGRES_PASSWORD: reviewer
     ports:
       - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
 
-volumes:
-  pgdata:
+  migrate:
+    image: migrate/migrate
+    depends_on:
+      - postgres
+    volumes:
+      - ./migrations:/migrations
+    command:
+      [
+        "-path", "/migrations",
+        "-database",
+        "postgres://reviewer:reviewer@postgres:5432/reviewer?sslmode=disable",
+        "up"
+      ]
+
+  app:
+    build: .
+    depends_on:
+      - postgres
+      - migrate
+    ports:
+      - "8080:8080"
