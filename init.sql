@@ -24,3 +24,7 @@ CREATE TABLE IF NOT EXISTS review_assignments (
     reviewer_login TEXT NOT NULL,
     assigned_at TIMESTAMP DEFAULT now()
 );
+
+INSERT INTO users (github_login, telegram_chat_id) VALUES  ('reviewer1', 1009163017),
+                                                           ('reviewer2', 1009163017),
+                                                           ('reviewer3', 1009163017);
