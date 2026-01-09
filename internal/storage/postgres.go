@@ -90,7 +90,7 @@ func (p *Postgres) AssignReviewer(prID int, reviewer string) error {
 	return err
 }
 
-func (p *Postgres) NotifyReviewer(reviewer string, message string, bot *telegram.Bot) {
+func (p *Postgres) NotifyReviewer(reviewer string, message string, bot telegram.Notifier) { //unit test
 	var chatID int64
 	err := p.pool.QueryRow(context.Background(),
 		`SELECT telegram_chat_id FROM users WHERE github_login=$1`, reviewer).Scan(&chatID)
@@ -104,7 +104,7 @@ func (p *Postgres) NotifyReviewer(reviewer string, message string, bot *telegram
 	}
 }
 
-func (p *Postgres) HandlePR(event github.PullRequestEvent, bot *telegram.Bot) {
+func (p *Postgres) HandlePR(event github.PullRequestEvent, bot telegram.Notifier) { //unit test
 	prID, err := p.SavePullRequest(event)
 	if err != nil {
 		log.Println("Error saving PR:", err)
