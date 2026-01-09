@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS pull_requests (
 
 CREATE TABLE IF NOT EXISTS review_assignments (
     id SERIAL PRIMARY KEY,
-    pr_id INT REFERENCES pull_requests(id),
+    pr_id INT REFERENCES pull_re=quests(id),
     reviewer_login TEXT NOT NULL,
     assigned_at TIMESTAMP DEFAULT now()
 );

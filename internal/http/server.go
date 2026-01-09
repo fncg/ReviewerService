@@ -7,19 +7,22 @@ import (
 
 	"github.com/fncg/ReviewerService/internal/github"
 	"github.com/fncg/ReviewerService/internal/storage"
+	"github.com/fncg/ReviewerService/internal/telegram"
 )
 
 type Server struct {
 	mux *http.ServeMux
 	db  *storage.Postgres
+	bot *telegram.Bot
 }
 
-func NewServer(db *storage.Postgres) *Server {
+func NewServer(db *storage.Postgres, bot *telegram.Bot) *Server {
 	mux := http.NewServeMux()
 
 	s := &Server{
 		mux: mux,
 		db:  db,
+		bot: bot,
 	}
 
 	mux.HandleFunc("/health", s.health)
@@ -60,7 +63,7 @@ func (s *Server) githubWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.db.HandlePR(event)
+	s.db.HandlePR(event, s.bot)
 
 	log.Printf(
 		"New PR opened: repo=%s title=%s author=%s",

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/fncg/ReviewerService/internal/github"
+	"github.com/fncg/ReviewerService/internal/telegram"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -89,7 +90,21 @@ func (p *Postgres) AssignReviewer(prID int, reviewer string) error {
 	return err
 }
 
-func (p *Postgres) HandlePR(event github.PullRequestEvent) {
+func (p *Postgres) NotifyReviewer(reviewer string, message string, bot *telegram.Bot) {
+	var chatID int64
+	err := p.pool.QueryRow(context.Background(),
+		`SELECT telegram_chat_id FROM users WHERE github_login=$1`, reviewer).Scan(&chatID)
+	if err != nil {
+		log.Println("Failed to get Telegram chat ID:", err)
+		return
+	}
+
+	if chatID != 0 {
+		bot.Notify(chatID, message)
+	}
+}
+
+func (p *Postgres) HandlePR(event github.PullRequestEvent, bot *telegram.Bot) {
 	prID, err := p.SavePullRequest(event)
 	if err != nil {
 		log.Println("Error saving PR:", err)
@@ -108,4 +123,7 @@ func (p *Postgres) HandlePR(event github.PullRequestEvent) {
 	}
 
 	log.Printf("PR %d saved, reviewer assigned: %s\n", prID, reviewer)
+
+	msg := "You have been assigned to review PR: " + event.PullRequest.HTML
+	p.NotifyReviewer(reviewer, msg, bot)
 }
