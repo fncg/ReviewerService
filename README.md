@@ -213,8 +213,16 @@ PostgreSQL
 Read Replicas (при росте Read-нагрузки):
 ![](https://github.com/fncg/ReviewerService/blob/main/Uml%20Diagram%20(3).png)
 
+## Build
 
+`./run-all.ps1`
 
+собирает приложение, запускает unit-тесты, интеграционные тесты и приложение. При сборке docker compose запускаются unit тесты и интеграционные тесты. Покрытие unit-тестами:
+![](https://github.com/fncg/ReviewerService/blob/main/Снимок%20экрана%202026-01-10%20033111.png)
+
+Интеграционный тест описывает сценарий:
+"Когда я создаю Pull Request в репозитории, я хочу чтобы нужный ревьюер был назначен автоматически"
+После прохождения тестов поднимается приложение с помощью docker-compose.
 
 
 
