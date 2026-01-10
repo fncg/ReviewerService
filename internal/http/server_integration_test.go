@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/fncg/ReviewerService/internal/storage"
@@ -15,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockTelegramBot мокирует Telegram бота для интеграционного теста
 type mockTelegramBot struct {
 	notifications []struct {
 		chatID  int64
@@ -23,7 +24,6 @@ type mockTelegramBot struct {
 	}
 }
 
-// Проверяем, что mockTelegramBot реализует интерфейс telegram.Notifier
 var _ telegram.Notifier = (*mockTelegramBot)(nil)
 
 func (m *mockTelegramBot) Notify(chatID int64, message string) {
@@ -33,23 +33,24 @@ func (m *mockTelegramBot) Notify(chatID int64, message string) {
 	}{chatID, message})
 }
 
-// TestUserStory_PullRequestAutoAssignmentIntegration проверяет пользовательскую историю:
-// "Когда я создаю Pull Request в репозитории, я хочу чтобы нужный ревьюер был назначен автоматически"
-//
-// Для запуска этого интеграционного теста необходимо:
-// 1. Запустить PostgreSQL БД (например, через docker-compose up)
-// 2. Убедиться, что БД доступна по адресу localhost:5432
-// 3. База данных должна быть инициализирована скриптом init.sql
-//
-// Запуск: go test -v ./internal/http -run TestUserStory_PullRequestAutoAssignmentIntegration
 func TestUserStory_PullRequestAutoAssignmentIntegration(t *testing.T) {
-	// Подключаемся к реальной PostgreSQL БД
-	dsn := "postgres://reviewer:reviewer@localhost:5432/reviewer?sslmode=disable"
+
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgres://reviewer:reviewer@localhost:5432/reviewer?sslmode=disable"
+	} else {
+		if !strings.Contains(dsn, "sslmode") {
+			if strings.Contains(dsn, "?") {
+				dsn += "&sslmode=disable"
+			} else {
+				dsn += "?sslmode=disable"
+			}
+		}
+	}
 	db, err := storage.NewPostgres(dsn)
 	require.NoError(t, err, "Не удалось подключиться к БД")
 	defer db.Close()
 
-	// Создаем mock Telegram бота
 	mockBot := &mockTelegramBot{
 		notifications: make([]struct {
 			chatID  int64
@@ -57,16 +58,29 @@ func TestUserStory_PullRequestAutoAssignmentIntegration(t *testing.T) {
 		}, 0),
 	}
 
-	// Создаем HTTP сервер с реальной БД и mock ботом
 	server := NewServer(db, mockBot)
 
-	// Подготавливаем тестовые данные в БД
 	ctx := context.Background()
 	conn, err := sql.Open("pgx", dsn)
 	require.NoError(t, err)
 	defer conn.Close()
 
-	// Очищаем тестовые данные перед тестом
+	type userData struct {
+		githubLogin   string
+		telegramChatID int64
+	}
+	var originalUsers []userData
+	rows, err := conn.QueryContext(ctx, `SELECT github_login, telegram_chat_id FROM users`)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var u userData
+			if err := rows.Scan(&u.githubLogin, &u.telegramChatID); err == nil {
+				originalUsers = append(originalUsers, u)
+			}
+		}
+	}
+
 	_, err = conn.ExecContext(ctx, `
 		DELETE FROM review_assignments;
 		DELETE FROM pull_requests;
@@ -75,7 +89,6 @@ func TestUserStory_PullRequestAutoAssignmentIntegration(t *testing.T) {
 	`)
 	require.NoError(t, err, "Не удалось очистить тестовые данные")
 
-	// Добавляем тестовых пользователей (ревьюеров)
 	_, err = conn.ExecContext(ctx, `
 		INSERT INTO users (github_login, telegram_chat_id) VALUES 
 		('reviewer1', 123456),
@@ -84,7 +97,6 @@ func TestUserStory_PullRequestAutoAssignmentIntegration(t *testing.T) {
 	`)
 	require.NoError(t, err, "Не удалось добавить тестовых пользователей")
 
-	// Формируем payload для GitHub webhook
 	prEvent := map[string]interface{}{
 		"action": "opened",
 		"pull_request": map[string]interface{}{
@@ -103,7 +115,6 @@ func TestUserStory_PullRequestAutoAssignmentIntegration(t *testing.T) {
 	jsonBody, err := json.Marshal(prEvent)
 	require.NoError(t, err, "Не удалось сериализовать JSON")
 
-	// Отправляем HTTP запрос к webhook endpoint
 	req := httptest.NewRequest(http.MethodPost, "/github/webhook", bytes.NewBuffer(jsonBody))
 	req.Header.Set("X-GitHub-Event", "pull_request")
 	req.Header.Set("Content-Type", "application/json")
@@ -111,10 +122,8 @@ func TestUserStory_PullRequestAutoAssignmentIntegration(t *testing.T) {
 
 	server.githubWebhook(w, req)
 
-	// Проверяем, что запрос обработан успешно
 	require.Equal(t, http.StatusOK, w.Code, "Webhook должен вернуть 200 OK")
 
-	// Проверяем, что PR сохранен в БД
 	var prID int
 	var githubPRID int64
 	var authorLogin string
@@ -130,7 +139,6 @@ func TestUserStory_PullRequestAutoAssignmentIntegration(t *testing.T) {
 	require.Greater(t, prID, 0, "PR ID должен быть больше 0")
 	require.Greater(t, repoID, 0, "Repository ID должен быть больше 0")
 
-	// Проверяем, что репозиторий сохранен
 	var repoFullName string
 	err = conn.QueryRowContext(ctx, `
 		SELECT full_name FROM repositories WHERE id = $1
@@ -138,7 +146,6 @@ func TestUserStory_PullRequestAutoAssignmentIntegration(t *testing.T) {
 	require.NoError(t, err, "Репозиторий должен быть сохранен")
 	require.Equal(t, "test/repo", repoFullName, "Имя репозитория должно совпадать")
 
-	// Проверяем, что ревьюер назначен
 	var reviewerLogin string
 	var assignmentID int
 	err = conn.QueryRowContext(ctx, `
@@ -152,7 +159,6 @@ func TestUserStory_PullRequestAutoAssignmentIntegration(t *testing.T) {
 	require.Contains(t, []string{"reviewer1", "reviewer2", "reviewer3"}, reviewerLogin,
 		"Ревьюер должен быть одним из доступных ревьюеров")
 
-	// Проверяем, что уведомление отправлено в Telegram
 	require.Equal(t, 1, len(mockBot.notifications), "Должно быть отправлено одно уведомление")
 
 	notification := mockBot.notifications[0]
@@ -163,7 +169,6 @@ func TestUserStory_PullRequestAutoAssignmentIntegration(t *testing.T) {
 	require.Contains(t, notification.message, "https://github.com/test/repo/pull/1",
 		"Сообщение должно содержать ссылку на PR")
 
-	// Проверяем, что chat ID соответствует назначенному ревьюеру
 	var expectedChatID int64
 	err = conn.QueryRowContext(ctx, `
 		SELECT telegram_chat_id FROM users WHERE github_login = $1
@@ -171,4 +176,30 @@ func TestUserStory_PullRequestAutoAssignmentIntegration(t *testing.T) {
 	require.NoError(t, err, "Должен быть найден chat ID для ревьюера")
 	require.Equal(t, expectedChatID, notification.chatID,
 		"Chat ID в уведомлении должен соответствовать chat ID ревьюера")
+
+	_, err = conn.ExecContext(ctx, `
+		DELETE FROM review_assignments;
+		DELETE FROM pull_requests;
+		DELETE FROM repositories;
+		DELETE FROM users;
+	`)
+	if err == nil {
+		if len(originalUsers) > 0 {
+			for _, u := range originalUsers {
+				conn.ExecContext(ctx, `
+					INSERT INTO users (github_login, telegram_chat_id) 
+					VALUES ($1, $2)
+					ON CONFLICT (github_login) DO NOTHING
+				`, u.githubLogin, u.telegramChatID)
+			}
+		} else {
+			conn.ExecContext(ctx, `
+				INSERT INTO users (github_login, telegram_chat_id) VALUES 
+				('reviewer1', 1009163017),
+				('reviewer2', 1009163017),
+				('reviewer3', 1009163017)
+				ON CONFLICT (github_login) DO NOTHING
+			`)
+		}
+	}
 }

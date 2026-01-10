@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"github.com/fncg/ReviewerService/internal/http"
 	"github.com/fncg/ReviewerService/internal/storage"
@@ -9,7 +10,10 @@ import (
 )
 
 func main() {
-	dsn := "postgres://reviewer:reviewer@localhost:5432/reviewer"
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "postgres://reviewer:reviewer@localhost:5432/reviewer"
+	}
 
 	db, err := storage.NewPostgres(dsn)
 	if err != nil {
